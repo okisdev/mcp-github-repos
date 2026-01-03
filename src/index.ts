@@ -26,8 +26,9 @@ app.get("/", (c) => {
 			health: "GET /",
 		},
 		tools: [
-			"search_code - Search code in a repository",
-			"get_file_content - Get file content",
+			"find_repo - Search for repositories by name or keywords",
+			"search_code - Search code in a repository (owner/repo format)",
+			"get_file_content - Get file content with syntax highlighting",
 			"list_files - List files in a directory",
 			"get_repo_info - Get repository information",
 		],

@@ -25,6 +25,20 @@ export interface SearchCodeResult {
 	}>;
 }
 
+export interface SearchReposResult {
+	totalCount: number;
+	items: Array<{
+		id: number;
+		fullName: string;
+		description: string | null;
+		htmlUrl: string;
+		language: string | null;
+		stargazersCount: number;
+		forksCount: number;
+		topics: string[];
+	}>;
+}
+
 export interface FileContent {
 	name: string;
 	path: string;
@@ -61,12 +75,51 @@ export interface RepoInfo {
 	updatedAt: string | null;
 }
 
+/**
+ * Parse repository string in format "owner/repo" or just "repo"
+ */
+export function parseRepository(repository: string): { owner: string; repo: string } {
+	const parts = repository.split("/");
+	if (parts.length === 2) {
+		return { owner: parts[0], repo: parts[1] };
+	}
+	throw new Error(
+		`Invalid repository format: "${repository}". Expected "owner/repo" format (e.g., "vercel/ai", "facebook/react").`,
+	);
+}
+
 export function createGitHubClient(config: GitHubConfig = {}) {
 	const octokit = new Octokit({
 		auth: config.token || undefined,
 	});
 
 	return {
+		/**
+		 * Search for repositories by name or description
+		 */
+		async searchRepos(query: string): Promise<SearchReposResult> {
+			const response = await octokit.search.repos({
+				q: query,
+				per_page: 10,
+				sort: "stars",
+				order: "desc",
+			});
+
+			return {
+				totalCount: response.data.total_count,
+				items: response.data.items.map((item) => ({
+					id: item.id,
+					fullName: item.full_name,
+					description: item.description,
+					htmlUrl: item.html_url,
+					language: item.language,
+					stargazersCount: item.stargazers_count,
+					forksCount: item.forks_count,
+					topics: item.topics ?? [],
+				})),
+			};
+		},
+
 		async searchCode(
 			owner: string,
 			repo: string,
