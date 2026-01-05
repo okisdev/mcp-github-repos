@@ -10,17 +10,56 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server built w
 - 📁 **List Files** - Browse directory structures
 - ℹ️ **Repository Info** - Get repository metadata (stars, forks, description, etc.)
 
-## Installation
+## Install in Cursor
 
-```bash
-pnpm install
+### One-Click Install
+
+[Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=GitHub%20Repos&config=eyJ1cmwiOiJodHRwczovL21jcC1naXRodWItcmVwb3MudmVyY2VsLmFwcC9tY3AifQ%3D%3D)
+
+### Manual Configuration
+
+Add to your MCP configuration file:
+
+**Remote Server (Recommended)**
+
+```json
+{
+  "mcpServers": {
+    "github-repos": {
+      "url": "https://mcp-github-repos.vercel.app/mcp"
+    }
+  }
+}
 ```
 
-## Usage
+**With GitHub Token (Higher Rate Limits)**
+
+```json
+{
+  "mcpServers": {
+    "github-repos": {
+      "url": "https://mcp-github-repos.vercel.app/mcp",
+      "headers": {
+        "X-GitHub-Token": "${env:GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Configuration File Locations
+
+| Location | Path | Scope |
+|----------|------|-------|
+| **Project** | `.cursor/mcp.json` | Current project only |
+| **Global** | `~/.cursor/mcp.json` | All projects |
+
+## Self-Hosting
 
 ### Development
 
 ```bash
+pnpm install
 pnpm dev
 ```
 
@@ -31,14 +70,13 @@ pnpm build
 pnpm start
 ```
 
-## Endpoints
+### Deploy to Vercel
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp` | POST | Streamable HTTP transport (recommended) |
-| `/sse` | GET | SSE transport (legacy, for backwards compatibility) |
-| `/messages` | POST | SSE messages endpoint |
-| `/` | GET | Health check |
+```bash
+vercel deploy
+```
+
+Then update your MCP config to use your deployment URL.
 
 ## MCP Tools
 
@@ -108,31 +146,59 @@ When asked "search ai-sdk repo for useChat", the AI will:
 
 ## GitHub Token (Optional)
 
-For higher rate limits, provide a GitHub token via:
+For higher rate limits (anonymous: 10 req/min, authenticated: 30 req/min), provide a GitHub token:
 
-**Environment variable:**
+**Via Environment Variable:**
 
 ```bash
 GITHUB_TOKEN=ghp_xxx pnpm dev
 ```
 
-**Request header:**
+**Via Request Header:**
 
 ```
 X-GitHub-Token: ghp_xxx
 ```
 
+**Via MCP Config:**
+
+```json
+{
+  "mcpServers": {
+    "github-repos": {
+      "url": "https://mcp-github-repos.vercel.app/mcp",
+      "headers": {
+        "X-GitHub-Token": "${env:GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+## API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp` | POST | MCP endpoint (Streamable HTTP) |
+| `/mcp` | DELETE | Session cleanup (stateless, no-op) |
+| `/` | GET | Health check |
+
+> **Note**: This server uses **Streamable HTTP** transport (stateless), compatible with serverless environments like Vercel.
+
 ## Example Requests
 
 ```bash
+# Health check
+curl https://mcp-github-repos.vercel.app
+
 # List tools
-curl -X POST http://localhost:3000/mcp \
+curl -X POST https://mcp-github-repos.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 
 # Find repository
-curl -X POST http://localhost:3000/mcp \
+curl -X POST https://mcp-github-repos.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{
@@ -143,20 +209,6 @@ curl -X POST http://localhost:3000/mcp \
       "arguments":{"query":"ai-sdk"}
     },
     "id":2
-  }'
-
-# Search code
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc":"2.0",
-    "method":"tools/call",
-    "params":{
-      "name":"search_code",
-      "arguments":{"repository":"vercel/ai","query":"useChat"}
-    },
-    "id":3
   }'
 ```
 
