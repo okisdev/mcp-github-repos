@@ -17,9 +17,6 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
-      fetch-to-node:
-        specifier: ^2.1.0
-        version: 2.1.0
       hono:
         specifier: ^4.11.3
         version: 4.11.3
@@ -566,9 +563,6 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
-
-  fetch-to-node@2.1.0:
-    resolution: {integrity: sha512-Wq05j6LE1GrWpT2t1YbCkyFY6xKRJq3hx/oRJdWEJpZlik3g25MmdJS6RFm49iiMJw6zpZuBOrgihOgy2jGyAA==}
 
   finalhandler@2.1.1:
     resolution: {integrity: sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==}
@@ -1395,8 +1389,6 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
-
-  fetch-to-node@2.1.0: {}
 
   finalhandler@2.1.1:
     dependencies:

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { toFetchResponse, toReqRes } from "fetch-to-node";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "./mcp-server.js";
+import packageJson from "../package.json" with { type: "json" };
 
 const app = new Hono();
 
@@ -12,9 +12,9 @@ app.use("*", cors());
 // Health check endpoint
 app.get("/", (c) => {
 	return c.json({
-		name: "mcp-github-repos",
-		version: "1.0.0",
-		description: "MCP server for searching GitHub repositories",
+		name: packageJson.name,
+		version: packageJson.version,
+		description: packageJson.description,
 		transport: "Streamable HTTP (stateless)",
 		endpoint: "POST /mcp",
 		tools: [
@@ -29,8 +29,6 @@ app.get("/", (c) => {
 
 // Streamable HTTP endpoint (stateless, works with serverless)
 app.post("/mcp", async (c) => {
-	const { req, res } = toReqRes(c.req.raw);
-
 	// Get GitHub token from header or environment (optional)
 	const githubToken =
 		c.req.header("X-GitHub-Token") || process.env.GITHUB_TOKEN || undefined;
@@ -38,19 +36,44 @@ app.post("/mcp", async (c) => {
 	const server = createMcpServer({ githubToken });
 
 	try {
-		const transport = new StreamableHTTPServerTransport({
+		const transport = new WebStandardStreamableHTTPServerTransport({
 			sessionIdGenerator: undefined, // Stateless mode
 		});
 
 		await server.connect(transport);
-		await transport.handleRequest(req, res, await c.req.json());
 
-		res.on("close", () => {
-			transport.close();
-			server.close();
+		const response = await transport.handleRequest(c.req.raw, {
+			parsedBody: await c.req.json(),
 		});
 
-		return toFetchResponse(res);
+		// Clean up when the response is done
+		if (response.body) {
+			const originalBody = response.body;
+			const reader = originalBody.getReader();
+			const stream = new ReadableStream({
+				async start(controller) {
+					try {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							controller.enqueue(value);
+						}
+						controller.close();
+					} finally {
+						await transport.close();
+						await server.close();
+					}
+				},
+			});
+			return new Response(stream, {
+				status: response.status,
+				headers: response.headers,
+			});
+		}
+
+		await transport.close();
+		await server.close();
+		return response;
 	} catch (error) {
 		console.error("MCP request error:", error);
 		return c.json(

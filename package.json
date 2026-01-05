@@ -2,6 +2,7 @@
   "name": "mcp-github-repos",
   "version": "0.0.1",
   "type": "module",
+  "description": "MCP server for searching GitHub repositories",
   "scripts": {
     "dev": "tsup --watch --onSuccess \"node dist/serve.js\"",
     "build": "tsup",
@@ -12,7 +13,6 @@
     "@hono/node-server": "^1.19.7",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@octokit/rest": "^22.0.1",
-    "fetch-to-node": "^2.1.0",
     "hono": "^4.11.3",
     "zod": "^4.3.4"
   },
