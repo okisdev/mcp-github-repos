@@ -1,0 +1,26 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "mcp-github-repos",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-12-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"vars": {
+		"GITHUB_TOKEN": ""
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"head_sampling_rate": 1,
+			"invocation_logs": true,
+			"persist": true
+		},
+		"traces": {
+			"enabled": false,
+			"head_sampling_rate": 1,
+			"persist": true
+		}
+	},
+	"placement": {
+		"mode": "smart"
+	}
+}
