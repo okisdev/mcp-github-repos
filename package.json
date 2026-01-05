@@ -1,24 +1,25 @@
 {
   "name": "mcp-github-repos",
   "version": "0.0.1",
-  "type": "module",
   "description": "MCP server for searching GitHub repositories",
+  "type": "module",
   "scripts": {
-    "dev": "tsup --watch --onSuccess \"node dist/serve.js\"",
-    "build": "tsup",
-    "start": "node dist/serve.js",
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.7",
+    "@hono/mcp": "^0.2.3",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@octokit/rest": "^22.0.1",
     "hono": "^4.11.3",
-    "zod": "^4.3.4"
+    "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "@cloudflare/workers-types": "^4.20260103.0",
+    "@types/node": "^22.15.32",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.54.0"
   }
 }

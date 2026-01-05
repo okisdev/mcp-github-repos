@@ -1,6 +1,6 @@
 # mcp-github-repos
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server built with [Hono](https://hono.dev) for searching and exploring GitHub repositories.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server built with [Hono](https://hono.dev) and [@hono/mcp](https://honohub.dev/docs/hono-mcp) for [Cloudflare Workers](https://workers.cloudflare.com), enabling AI to search and explore GitHub repositories.
 
 ## Features
 
@@ -10,75 +10,70 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server built w
 - 📁 **List Files** - Browse directory structures
 - ℹ️ **Repository Info** - Get repository metadata (stars, forks, description, etc.)
 
-## Install in Cursor
+## Use with Cursor
 
-### One-Click Install
+Add this MCP server to Cursor by editing your `mcp.json` configuration file.
 
-[Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=GitHub%20Repos&config=eyJ1cmwiOiJodHRwczovL21jcC1naXRodWItcmVwb3MudmVyY2VsLmFwcC9tY3AifQ%3D%3D)
+> See [Cursor MCP Documentation](https://cursor.com/docs/context/mcp) for more details.
 
-### Manual Configuration
-
-Add to your MCP configuration file:
-
-**Remote Server (Recommended)**
+### Remote Server (Deployed)
 
 ```json
 {
   "mcpServers": {
     "github-repos": {
-      "url": "https://mcp-github-repos.vercel.app/mcp"
-    }
-  }
-}
-```
-
-**With GitHub Token (Higher Rate Limits)**
-
-```json
-{
-  "mcpServers": {
-    "github-repos": {
-      "url": "https://mcp-github-repos.vercel.app/mcp",
+      "url": "https://your-worker.your-subdomain.workers.dev/mcp",
       "headers": {
-        "X-GitHub-Token": "${env:GITHUB_TOKEN}"
+        "X-GitHub-Token": "ghp_xxx"
       }
     }
   }
 }
 ```
 
-### Configuration File Locations
+### Local Development
 
-| Location | Path | Scope |
-|----------|------|-------|
-| **Project** | `.cursor/mcp.json` | Current project only |
-| **Global** | `~/.cursor/mcp.json` | All projects |
+```json
+{
+  "mcpServers": {
+    "github-repos": {
+      "url": "http://localhost:8787/mcp"
+    }
+  }
+}
+```
 
 ## Self-Hosting
+
+### Installation
+
+```bash
+pnpm install
+```
 
 ### Development
 
 ```bash
-pnpm install
 pnpm dev
 ```
 
-### Production
+Server runs at `http://localhost:8787`
+
+### Deploy to Cloudflare Workers
 
 ```bash
-pnpm build
-pnpm start
+pnpm deploy
 ```
-
-### Deploy to Vercel
-
-```bash
-vercel deploy
-```
-
-Then update your MCP config to use your deployment URL.
 
 ## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `find_repo` | Search for repositories by name or keywords |
+| `search_code` | Search code in a repository (owner/repo format) |
+| `get_file_content` | Get file content with syntax highlighting |
+| `list_files` | List files in a directory |
+| `get_repo_info` | Get repository information |
 
 ### `find_repo`
 
@@ -90,7 +85,7 @@ Search for GitHub repositories by name, description, or keywords. **Use this fir
 }
 ```
 
-Example: Searching "ai-sdk" will return `vercel/ai` as the top result.
+Example: Searching "ai-sdk" will return `vercel/ai` as a top result.
 
 ### `search_code`
 
@@ -146,71 +141,42 @@ When asked "search ai-sdk repo for useChat", the AI will:
 
 ## GitHub Token (Optional)
 
-For higher rate limits (anonymous: 10 req/min, authenticated: 30 req/min), provide a GitHub token:
+For higher rate limits, provide a GitHub token:
 
-**Via Environment Variable:**
+### Via Cloudflare Secret (Recommended for production)
 
 ```bash
-GITHUB_TOKEN=ghp_xxx pnpm dev
+wrangler secret put GITHUB_TOKEN
 ```
 
-**Via Request Header:**
-
-```
-X-GitHub-Token: ghp_xxx
-```
-
-**Via MCP Config:**
+### Via Request Header
 
 ```json
 {
   "mcpServers": {
     "github-repos": {
-      "url": "https://mcp-github-repos.vercel.app/mcp",
+      "url": "https://your-worker.workers.dev/mcp",
       "headers": {
-        "X-GitHub-Token": "${env:GITHUB_TOKEN}"
+        "X-GitHub-Token": "ghp_xxx"
       }
     }
   }
 }
 ```
 
-## API Reference
+### Via wrangler.toml (Development only)
+
+```toml
+[vars]
+GITHUB_TOKEN = "ghp_xxx"
+```
+
+## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/mcp` | POST | MCP endpoint (Streamable HTTP) |
-| `/mcp` | DELETE | Session cleanup (stateless, no-op) |
+| `/mcp` | ALL | MCP Streamable HTTP endpoint |
 | `/` | GET | Health check |
-
-> **Note**: This server uses **Streamable HTTP** transport (stateless), compatible with serverless environments like Vercel.
-
-## Example Requests
-
-```bash
-# Health check
-curl https://mcp-github-repos.vercel.app
-
-# List tools
-curl -X POST https://mcp-github-repos.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-
-# Find repository
-curl -X POST https://mcp-github-repos.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc":"2.0",
-    "method":"tools/call",
-    "params":{
-      "name":"find_repo",
-      "arguments":{"query":"ai-sdk"}
-    },
-    "id":2
-  }'
-```
 
 ## License
 

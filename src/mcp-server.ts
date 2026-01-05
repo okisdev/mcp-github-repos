@@ -1,26 +1,21 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-	createGitHubClient,
-	parseRepository,
-	type GitHubClient,
-} from "./github.js";
+import { createGitHubClient, parseRepository } from "./github";
+import packageJson from "../package.json" with { type: "json" };
 
 export interface McpServerConfig {
 	githubToken?: string;
 }
 
 export function createMcpServer(config: McpServerConfig = {}) {
-	const server = new McpServer(
-		{ name: "mcp-github-repos", version: "1.0.0" },
-		{ capabilities: { logging: {} } },
-	);
-
-	const github: GitHubClient = createGitHubClient({
-		token: config.githubToken,
+	const server = new McpServer({
+		name: packageJson.name,
+		version: packageJson.version,
 	});
 
-	// Tool: find_repo - Search for repositories
+	const github = createGitHubClient({ token: config.githubToken });
+
+	// Tool: find_repo
 	server.tool(
 		"find_repo",
 		`Search GitHub to find the correct repository name.
@@ -90,7 +85,7 @@ OUTPUT: Returns top repositories with full names (owner/repo format) that you ca
 		},
 	);
 
-	// Tool: search_code - Search code in a GitHub repository
+	// Tool: search_code
 	server.tool(
 		"search_code",
 		`Search for code (functions, classes, keywords) within a specific GitHub repository.
@@ -163,7 +158,7 @@ EXAMPLES:
 		},
 	);
 
-	// Tool: get_file_content - Get the content of a file in a repository
+	// Tool: get_file_content
 	server.tool(
 		"get_file_content",
 		`Read the complete source code of a specific file from a GitHub repository.
@@ -190,14 +185,15 @@ EXAMPLES:
 			ref: z
 				.string()
 				.optional()
-				.describe("Optional: branch, tag, or commit SHA (defaults to main branch)"),
+				.describe(
+					"Optional: branch, tag, or commit SHA (defaults to main branch)",
+				),
 		},
 		async ({ repository, path, ref }) => {
 			try {
 				const { owner, repo } = parseRepository(repository);
 				const file = await github.getFileContent(owner, repo, path, ref);
 
-				// Detect language from file extension for syntax highlighting
 				const ext = path.split(".").pop() || "";
 				const langMap: Record<string, string> = {
 					ts: "typescript",
@@ -234,7 +230,7 @@ EXAMPLES:
 		},
 	);
 
-	// Tool: list_files - List files in a repository directory
+	// Tool: list_files
 	server.tool(
 		"list_files",
 		`List all files and folders in a repository directory. Use this to explore and understand project structure.
@@ -266,7 +262,6 @@ EXAMPLES:
 
 				const formatted = files
 					.sort((a, b) => {
-						// Directories first, then files
 						if (a.type === "dir" && b.type !== "dir") return -1;
 						if (a.type !== "dir" && b.type === "dir") return 1;
 						return a.name.localeCompare(b.name);
@@ -295,7 +290,7 @@ EXAMPLES:
 		},
 	);
 
-	// Tool: get_repo_info - Get repository information
+	// Tool: get_repo_info
 	server.tool(
 		"get_repo_info",
 		`Get metadata about a GitHub repository: description, stars, forks, language, topics, etc.
