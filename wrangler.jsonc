@@ -2,7 +2,7 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "mcp-github-repos",
 	"main": "src/index.ts",
-	"compatibility_date": "2024-12-01",
+	"compatibility_date": "2026-01-05",
 	"compatibility_flags": ["nodejs_compat"],
 	"vars": {
 		"GITHUB_TOKEN": ""
@@ -15,7 +15,7 @@
 			"persist": true
 		},
 		"traces": {
-			"enabled": false,
+			"enabled": true,
 			"head_sampling_rate": 1,
 			"persist": true
 		}
