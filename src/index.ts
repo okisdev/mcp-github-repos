@@ -1,8 +1,8 @@
+import { StreamableHTTPTransport } from "@hono/mcp";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { StreamableHTTPTransport } from "@hono/mcp";
-import { createMcpServer } from "./mcp-server";
 import packageJson from "../package.json" with { type: "json" };
+import { createMcpServer } from "./mcp-server";
 
 type Bindings = {
 	GITHUB_TOKEN?: string;
@@ -29,6 +29,8 @@ app.get("/", (c) => {
 			"get_file_content - Get file content with syntax highlighting",
 			"list_files - List files in a directory",
 			"get_repo_info - Get repository information",
+			"get_issue - Get issue details with timeline (comments, labels, events)",
+			"get_pull_request - Get PR details with diff and reviews",
 		],
 	});
 });

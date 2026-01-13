@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createGitHubClient, parseRepository } from "./github";
 import packageJson from "../package.json" with { type: "json" };
+import { createGitHubClient, parseRepository } from "./github";
 
 export interface McpServerConfig {
 	githubToken?: string;
@@ -334,6 +334,266 @@ This is a lightweight call - use it to quickly check repository details.`,
 				return {
 					content: [
 						{ type: "text", text: `Error getting repo info: ${message}` },
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// Tool: get_issue
+	server.tool(
+		"get_issue",
+		`Get detailed information about a GitHub issue, including its full timeline of events.
+
+WHEN TO USE:
+- Need to understand the full history of an issue
+- Want to see comments, label changes, assignments, and other events
+- Looking for context about how an issue evolved
+
+OUTPUT: Returns issue details with a chronological timeline including:
+- Comments with full body text
+- Label additions/removals
+- Assignee changes
+- Milestone changes
+- Cross-references from other issues/PRs
+- Commits that reference the issue
+
+EXAMPLES:
+- repository: "vercel/ai", issue_number: 123 → gets full issue timeline`,
+		{
+			repository: z
+				.string()
+				.describe('Repository in "owner/repo" format (e.g., "vercel/ai")'),
+			issue_number: z.number().describe("The issue number to retrieve"),
+		},
+		async ({ repository, issue_number }) => {
+			try {
+				const { owner, repo } = parseRepository(repository);
+				const issue = await github.getIssue(owner, repo, issue_number);
+
+				const formatDate = (date: string) => {
+					return new Date(date).toLocaleString("en-US", {
+						year: "numeric",
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+					});
+				};
+
+				const header = [
+					`# #${issue.number}: ${issue.title}`,
+					"",
+					`**State:** ${issue.state === "open" ? "🟢 Open" : "🔴 Closed"}`,
+					`**Author:** @${issue.user.login}`,
+					`**Created:** ${formatDate(issue.createdAt)}`,
+					`**Updated:** ${formatDate(issue.updatedAt)}`,
+					issue.closedAt ? `**Closed:** ${formatDate(issue.closedAt)}` : null,
+					"",
+					issue.labels.length > 0
+						? `**Labels:** ${issue.labels.map((l) => `\`${l.name}\``).join(", ")}`
+						: null,
+					issue.assignees.length > 0
+						? `**Assignees:** ${issue.assignees.map((a) => `@${a.login}`).join(", ")}`
+						: null,
+					issue.milestone ? `**Milestone:** ${issue.milestone.title}` : null,
+					"",
+					`🔗 ${issue.htmlUrl}`,
+				]
+					.filter(Boolean)
+					.join("\n");
+
+				const body = issue.body
+					? `\n---\n\n## Description\n\n${issue.body}`
+					: "";
+
+				const timelineItems = issue.timeline
+					.filter((event) => event.createdAt)
+					.map((event) => {
+						const time = formatDate(event.createdAt);
+						const actor = event.actor ? `@${event.actor.login}` : "someone";
+
+						switch (event.type) {
+							case "commented":
+								return `### 💬 ${actor} commented on ${time}\n\n${event.body || "(empty comment)"}`;
+							case "labeled":
+								return `🏷️ ${actor} added label \`${event.label?.name}\` on ${time}`;
+							case "unlabeled":
+								return `🏷️ ${actor} removed label \`${event.label?.name}\` on ${time}`;
+							case "assigned":
+								return `👤 ${actor} assigned @${event.assignee?.login} on ${time}`;
+							case "unassigned":
+								return `👤 ${actor} unassigned @${event.assignee?.login} on ${time}`;
+							case "milestoned":
+								return `🎯 ${actor} added to milestone "${event.milestone?.title}" on ${time}`;
+							case "demilestoned":
+								return `🎯 ${actor} removed from milestone "${event.milestone?.title}" on ${time}`;
+							case "renamed":
+								return `✏️ ${actor} changed title from "${event.rename?.from}" to "${event.rename?.to}" on ${time}`;
+							case "closed":
+								return `🔴 ${actor} closed this issue on ${time}`;
+							case "reopened":
+								return `🟢 ${actor} reopened this issue on ${time}`;
+							case "cross-referenced":
+								return `🔗 Referenced in #${event.source?.issue?.number}: ${event.source?.issue?.title} on ${time}`;
+							case "referenced":
+								return `📝 ${actor} referenced this in commit \`${event.commitId?.slice(0, 7)}\` on ${time}`;
+							case "committed":
+								return `📝 Commit \`${event.commitId?.slice(0, 7)}\` on ${time}`;
+							default:
+								return `📋 ${event.type} by ${actor} on ${time}`;
+						}
+					});
+
+				const timeline =
+					timelineItems.length > 0
+						? `\n---\n\n## Timeline\n\n${timelineItems.join("\n\n")}`
+						: "";
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `${header}${body}${timeline}`,
+						},
+					],
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: `Error getting issue: ${message}` }],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// Tool: get_pull_request
+	server.tool(
+		"get_pull_request",
+		`Get detailed information about a GitHub pull request, including diff and reviews.
+
+WHEN TO USE:
+- Need to review the changes in a pull request
+- Want to see the diff of what was changed
+- Looking for review comments and discussions
+- Understanding the full PR timeline
+
+OUTPUT: Returns PR details with:
+- Full diff showing all file changes
+- Review comments with code context
+- Timeline of events (comments, approvals, changes requested)
+- Merge status and commit information
+
+EXAMPLES:
+- repository: "vercel/ai", pull_number: 456 → gets full PR with diff and reviews`,
+		{
+			repository: z
+				.string()
+				.describe('Repository in "owner/repo" format (e.g., "vercel/ai")'),
+			pull_number: z.number().describe("The pull request number to retrieve"),
+		},
+		async ({ repository, pull_number }) => {
+			try {
+				const { owner, repo } = parseRepository(repository);
+				const pr = await github.getPullRequest(owner, repo, pull_number);
+
+				const formatDate = (date: string) => {
+					return new Date(date).toLocaleString("en-US", {
+						year: "numeric",
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+					});
+				};
+
+				const stateIcon =
+					pr.state === "open"
+						? pr.draft
+							? "📝 Draft"
+							: "🟢 Open"
+						: pr.mergedAt
+							? "🟣 Merged"
+							: "🔴 Closed";
+
+				const header = [
+					`# #${pr.number}: ${pr.title}`,
+					"",
+					`**State:** ${stateIcon}`,
+					`**Author:** @${pr.user.login}`,
+					`**Branch:** \`${pr.head.ref}\` → \`${pr.base.ref}\``,
+					`**Created:** ${formatDate(pr.createdAt)}`,
+					`**Updated:** ${formatDate(pr.updatedAt)}`,
+					pr.mergedAt ? `**Merged:** ${formatDate(pr.mergedAt)}` : null,
+					pr.closedAt && !pr.mergedAt
+						? `**Closed:** ${formatDate(pr.closedAt)}`
+						: null,
+					"",
+					`**Changes:** +${pr.additions} -${pr.deletions} in ${pr.changedFiles} files`,
+					`**Commits:** ${pr.commitsCount} | **Comments:** ${pr.commentsCount} | **Review comments:** ${pr.reviewCommentsCount}`,
+					"",
+					pr.labels.length > 0
+						? `**Labels:** ${pr.labels.map((l) => `\`${l.name}\``).join(", ")}`
+						: null,
+					pr.assignees.length > 0
+						? `**Assignees:** ${pr.assignees.map((a) => `@${a.login}`).join(", ")}`
+						: null,
+					pr.milestone ? `**Milestone:** ${pr.milestone.title}` : null,
+					"",
+					`🔗 ${pr.htmlUrl}`,
+				]
+					.filter(Boolean)
+					.join("\n");
+
+				const body = pr.body ? `\n---\n\n## Description\n\n${pr.body}` : "";
+
+				const reviewsSection =
+					pr.reviews.length > 0
+						? `\n---\n\n## Reviews\n\n${pr.reviews
+								.map((review) => {
+									const stateEmoji =
+										{
+											APPROVED: "✅",
+											CHANGES_REQUESTED: "❌",
+											COMMENTED: "💬",
+											DISMISSED: "🚫",
+											PENDING: "⏳",
+										}[review.state] || "📋";
+
+									const reviewHeader = `### ${stateEmoji} @${review.user.login} - ${review.state}${review.submittedAt ? ` on ${formatDate(review.submittedAt)}` : ""}`;
+									const reviewBody = review.body ? `\n\n${review.body}` : "";
+									const reviewComments =
+										review.comments.length > 0
+											? `\n\n**Review comments:**\n${review.comments
+													.map(
+														(c) =>
+															`- **${c.path}${c.line ? `:${c.line}` : ""}**: ${c.body}`,
+													)
+													.join("\n")}`
+											: "";
+
+									return `${reviewHeader}${reviewBody}${reviewComments}`;
+								})
+								.join("\n\n")}`
+						: "";
+
+				const diff = `\n---\n\n## Diff\n\n\`\`\`diff\n${pr.diff}\n\`\`\``;
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `${header}${body}${reviewsSection}${diff}`,
+						},
+					],
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{ type: "text", text: `Error getting pull request: ${message}` },
 					],
 					isError: true,
 				};

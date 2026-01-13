@@ -75,10 +75,103 @@ export interface RepoInfo {
 	updatedAt: string | null;
 }
 
+export interface IssueUser {
+	login: string;
+	htmlUrl: string;
+}
+
+export interface IssueLabel {
+	name: string;
+	color: string;
+	description: string | null;
+}
+
+export interface IssueTimelineEvent {
+	type: string;
+	createdAt: string;
+	actor?: IssueUser;
+	body?: string;
+	label?: IssueLabel;
+	assignee?: IssueUser;
+	milestone?: { title: string };
+	rename?: { from: string; to: string };
+	source?: { issue: { number: number; title: string } };
+	commitId?: string;
+	commitUrl?: string;
+}
+
+export interface IssueInfo {
+	number: number;
+	title: string;
+	state: string;
+	body: string | null;
+	user: IssueUser;
+	labels: IssueLabel[];
+	assignees: IssueUser[];
+	milestone: { title: string; state: string } | null;
+	createdAt: string;
+	updatedAt: string;
+	closedAt: string | null;
+	htmlUrl: string;
+	commentsCount: number;
+	timeline: IssueTimelineEvent[];
+}
+
+export interface PullRequestReviewComment {
+	id: number;
+	path: string;
+	line: number | null;
+	body: string;
+	user: IssueUser;
+	createdAt: string;
+	diffHunk: string;
+}
+
+export interface PullRequestReview {
+	id: number;
+	user: IssueUser;
+	body: string | null;
+	state: string;
+	submittedAt: string | null;
+	comments: PullRequestReviewComment[];
+}
+
+export interface PullRequestInfo {
+	number: number;
+	title: string;
+	state: string;
+	body: string | null;
+	user: IssueUser;
+	labels: IssueLabel[];
+	assignees: IssueUser[];
+	milestone: { title: string; state: string } | null;
+	createdAt: string;
+	updatedAt: string;
+	closedAt: string | null;
+	mergedAt: string | null;
+	htmlUrl: string;
+	head: { ref: string; sha: string };
+	base: { ref: string; sha: string };
+	draft: boolean;
+	mergeable: boolean | null;
+	additions: number;
+	deletions: number;
+	changedFiles: number;
+	commentsCount: number;
+	reviewCommentsCount: number;
+	commitsCount: number;
+	diff: string;
+	reviews: PullRequestReview[];
+	timeline: IssueTimelineEvent[];
+}
+
 /**
  * Parse repository string in format "owner/repo" or just "repo"
  */
-export function parseRepository(repository: string): { owner: string; repo: string } {
+export function parseRepository(repository: string): {
+	owner: string;
+	repo: string;
+} {
 	const parts = repository.split("/");
 	if (parts.length === 2) {
 		return { owner: parts[0], repo: parts[1] };
@@ -184,7 +277,7 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 				path: data.path,
 				sha: data.sha,
 				size: data.size,
-				content: Buffer.from(data.content, "base64").toString("utf-8"),
+				content: atob(data.content),
 				encoding: data.encoding,
 			};
 		},
@@ -240,6 +333,304 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 				topics: data.topics ?? [],
 				createdAt: data.created_at,
 				updatedAt: data.updated_at,
+			};
+		},
+
+		async getIssue(
+			owner: string,
+			repo: string,
+			issueNumber: number,
+		): Promise<IssueInfo> {
+			const [issueResponse, timelineResponse] = await Promise.all([
+				octokit.issues.get({
+					owner,
+					repo,
+					issue_number: issueNumber,
+				}),
+				octokit.issues.listEventsForTimeline({
+					owner,
+					repo,
+					issue_number: issueNumber,
+					per_page: 100,
+				}),
+			]);
+
+			const issue = issueResponse.data;
+			const timelineEvents = timelineResponse.data;
+
+			const parseUser = (
+				user: { login: string; html_url: string } | null,
+			): IssueUser => ({
+				login: user?.login ?? "unknown",
+				htmlUrl: user?.html_url ?? "",
+			});
+
+			const parseLabel = (label: {
+				name?: string;
+				color?: string | null;
+				description?: string | null;
+			}): IssueLabel => ({
+				name: label.name ?? "",
+				color: label.color ?? "",
+				description: label.description ?? null,
+			});
+
+			const timeline: IssueTimelineEvent[] = timelineEvents.map((event) => {
+				const base: IssueTimelineEvent = {
+					type: event.event ?? "unknown",
+					createdAt: (event as { created_at?: string }).created_at ?? "",
+					actor: (event as { actor?: { login: string; html_url: string } })
+						.actor
+						? parseUser(
+								(event as { actor: { login: string; html_url: string } }).actor,
+							)
+						: undefined,
+				};
+
+				if (event.event === "commented" && "body" in event) {
+					base.body = (event as { body?: string }).body ?? "";
+				}
+
+				if (event.event === "labeled" || event.event === "unlabeled") {
+					const labelEvent = event as {
+						label?: {
+							name?: string;
+							color?: string;
+							description?: string | null;
+						};
+					};
+					if (labelEvent.label) {
+						base.label = parseLabel(labelEvent.label);
+					}
+				}
+
+				if (event.event === "assigned" || event.event === "unassigned") {
+					const assignEvent = event as {
+						assignee?: { login: string; html_url: string };
+					};
+					if (assignEvent.assignee) {
+						base.assignee = parseUser(assignEvent.assignee);
+					}
+				}
+
+				if (event.event === "milestoned" || event.event === "demilestoned") {
+					const milestoneEvent = event as { milestone?: { title: string } };
+					if (milestoneEvent.milestone) {
+						base.milestone = { title: milestoneEvent.milestone.title };
+					}
+				}
+
+				if (event.event === "renamed") {
+					const renameEvent = event as {
+						rename?: { from: string; to: string };
+					};
+					if (renameEvent.rename) {
+						base.rename = renameEvent.rename;
+					}
+				}
+
+				if (event.event === "cross-referenced") {
+					const crossRefEvent = event as {
+						source?: { issue?: { number: number; title: string } };
+					};
+					if (crossRefEvent.source?.issue) {
+						base.source = {
+							issue: {
+								number: crossRefEvent.source.issue.number,
+								title: crossRefEvent.source.issue.title,
+							},
+						};
+					}
+				}
+
+				if (event.event === "referenced" || event.event === "committed") {
+					const commitEvent = event as {
+						commit_id?: string;
+						commit_url?: string;
+					};
+					base.commitId = commitEvent.commit_id;
+					base.commitUrl = commitEvent.commit_url;
+				}
+
+				return base;
+			});
+
+			return {
+				number: issue.number,
+				title: issue.title,
+				state: issue.state,
+				body: issue.body ?? null,
+				user: parseUser(issue.user),
+				labels: issue.labels.map((label) =>
+					typeof label === "string"
+						? { name: label, color: "", description: null }
+						: parseLabel(label),
+				),
+				assignees: (issue.assignees ?? []).map(parseUser),
+				milestone: issue.milestone
+					? { title: issue.milestone.title, state: issue.milestone.state }
+					: null,
+				createdAt: issue.created_at,
+				updatedAt: issue.updated_at,
+				closedAt: issue.closed_at,
+				htmlUrl: issue.html_url,
+				commentsCount: issue.comments,
+				timeline,
+			};
+		},
+
+		async getPullRequest(
+			owner: string,
+			repo: string,
+			pullNumber: number,
+		): Promise<PullRequestInfo> {
+			const [prResponse, diffResponse, reviewsResponse, timelineResponse] =
+				await Promise.all([
+					octokit.pulls.get({
+						owner,
+						repo,
+						pull_number: pullNumber,
+					}),
+					octokit.pulls.get({
+						owner,
+						repo,
+						pull_number: pullNumber,
+						mediaType: { format: "diff" },
+					}),
+					octokit.pulls.listReviews({
+						owner,
+						repo,
+						pull_number: pullNumber,
+						per_page: 100,
+					}),
+					octokit.issues.listEventsForTimeline({
+						owner,
+						repo,
+						issue_number: pullNumber,
+						per_page: 100,
+					}),
+				]);
+
+			const pr = prResponse.data;
+			const diff = diffResponse.data as unknown as string;
+			const reviewsData = reviewsResponse.data;
+			const timelineEvents = timelineResponse.data;
+
+			const parseUser = (
+				user: { login: string; html_url: string } | null,
+			): IssueUser => ({
+				login: user?.login ?? "unknown",
+				htmlUrl: user?.html_url ?? "",
+			});
+
+			const parseLabel = (label: {
+				name?: string;
+				color?: string | null;
+				description?: string | null;
+			}): IssueLabel => ({
+				name: label.name ?? "",
+				color: label.color ?? "",
+				description: label.description ?? null,
+			});
+
+			const reviews: PullRequestReview[] = await Promise.all(
+				reviewsData.map(async (review) => {
+					const commentsResponse = await octokit.pulls.listCommentsForReview({
+						owner,
+						repo,
+						pull_number: pullNumber,
+						review_id: review.id,
+						per_page: 100,
+					});
+
+					return {
+						id: review.id,
+						user: parseUser(review.user),
+						body: review.body,
+						state: review.state,
+						submittedAt: review.submitted_at ?? null,
+						comments: commentsResponse.data.map((comment) => ({
+							id: comment.id,
+							path: comment.path,
+							line: comment.line ?? null,
+							body: comment.body,
+							user: parseUser(comment.user),
+							createdAt: comment.created_at,
+							diffHunk: comment.diff_hunk,
+						})),
+					};
+				}),
+			);
+
+			const timeline: IssueTimelineEvent[] = timelineEvents.map((event) => {
+				const base: IssueTimelineEvent = {
+					type: event.event ?? "unknown",
+					createdAt: (event as { created_at?: string }).created_at ?? "",
+					actor: (event as { actor?: { login: string; html_url: string } })
+						.actor
+						? parseUser(
+								(event as { actor: { login: string; html_url: string } }).actor,
+							)
+						: undefined,
+				};
+
+				if (event.event === "commented" && "body" in event) {
+					base.body = (event as { body?: string }).body ?? "";
+				}
+
+				if (event.event === "labeled" || event.event === "unlabeled") {
+					const labelEvent = event as {
+						label?: {
+							name?: string;
+							color?: string;
+							description?: string | null;
+						};
+					};
+					if (labelEvent.label) {
+						base.label = parseLabel(labelEvent.label);
+					}
+				}
+
+				if (event.event === "reviewed") {
+					base.body = (event as { body?: string }).body ?? "";
+				}
+
+				return base;
+			});
+
+			return {
+				number: pr.number,
+				title: pr.title,
+				state: pr.state,
+				body: pr.body,
+				user: parseUser(pr.user),
+				labels: pr.labels.map((label) =>
+					typeof label === "string"
+						? { name: label, color: "", description: null }
+						: parseLabel(label),
+				),
+				assignees: (pr.assignees ?? []).map(parseUser),
+				milestone: pr.milestone
+					? { title: pr.milestone.title, state: pr.milestone.state }
+					: null,
+				createdAt: pr.created_at,
+				updatedAt: pr.updated_at,
+				closedAt: pr.closed_at,
+				mergedAt: pr.merged_at,
+				htmlUrl: pr.html_url,
+				head: { ref: pr.head.ref, sha: pr.head.sha },
+				base: { ref: pr.base.ref, sha: pr.base.sha },
+				draft: pr.draft ?? false,
+				mergeable: pr.mergeable,
+				additions: pr.additions,
+				deletions: pr.deletions,
+				changedFiles: pr.changed_files,
+				commentsCount: pr.comments,
+				reviewCommentsCount: pr.review_comments,
+				commitsCount: pr.commits,
+				diff,
+				reviews,
+				timeline,
 			};
 		},
 	};
