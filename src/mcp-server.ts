@@ -2,6 +2,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import packageJson from "../package.json" with { type: "json" };
 import { createGitHubClient, parseRepository } from "./github";
+import {
+	errorContent,
+	formatDate,
+	getCommitAuthorInfo,
+	getErrorMessage,
+	getFileStatusIcon,
+	getPrStateIcon,
+	getReviewStateEmoji,
+	textContent,
+} from "./utils";
 
 export interface McpServerConfig {
 	githubToken?: string;
@@ -15,7 +25,6 @@ export function createMcpServer(config: McpServerConfig = {}) {
 
 	const github = createGitHubClient({ token: config.githubToken });
 
-	// Tool: find_repo
 	server.tool(
 		"find_repo",
 		`Search GitHub to find the correct repository name.
@@ -42,14 +51,7 @@ OUTPUT: Returns top repositories with full names (owner/repo format) that you ca
 				const result = await github.searchRepos(query);
 
 				if (result.items.length === 0) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `No repositories found for "${query}". Try different keywords.`,
-							},
-						],
-					};
+					return textContent(`No repositories found for "${query}". Try different keywords.`);
 				}
 
 				const formatted = result.items.map((repo, index) => {
@@ -65,27 +67,15 @@ OUTPUT: Returns top repositories with full names (owner/repo format) that you ca
 					return lines.join("\n");
 				});
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Found ${result.totalCount} repositories for "${query}":\n\n${formatted.join("\n\n")}\n\n💡 Use the "owner/repo" format (e.g., "${result.items[0]?.fullName}") with other tools.`,
-						},
-					],
-				};
+				return textContent(
+					`Found ${result.totalCount} repositories for "${query}":\n\n${formatted.join("\n\n")}\n\n💡 Use the "owner/repo" format (e.g., "${result.items[0]?.fullName}") with other tools.`,
+				);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{ type: "text", text: `Error searching repositories: ${message}` },
-					],
-					isError: true,
-				};
+				return errorContent(`Error searching repositories: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: search_code
 	server.tool(
 		"search_code",
 		`Search for code (functions, classes, keywords) within a specific GitHub repository.
@@ -122,14 +112,9 @@ EXAMPLES:
 				const result = await github.searchCode(owner, repo, query);
 
 				if (result.items.length === 0) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `No code found for "${query}" in ${repository}. Try different keywords or check if the repository name is correct.`,
-							},
-						],
-					};
+					return textContent(
+						`No code found for "${query}" in ${repository}. Try different keywords or check if the repository name is correct.`,
+					);
 				}
 
 				const formattedResults = result.items.map((item) => {
@@ -140,25 +125,15 @@ EXAMPLES:
 					return text;
 				});
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Found ${result.totalCount} results for "${query}" in ${repository}:\n\n${formattedResults.join("\n\n")}\n\n💡 Use get_file_content to read the full source code of any file.`,
-						},
-					],
-				};
+				return textContent(
+					`Found ${result.totalCount} results for "${query}" in ${repository}:\n\n${formattedResults.join("\n\n")}\n\n💡 Use get_file_content to read the full source code of any file.`,
+				);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: `Error searching code: ${message}` }],
-					isError: true,
-				};
+				return errorContent(`Error searching code: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: get_file_content
 	server.tool(
 		"get_file_content",
 		`Read the complete source code of a specific file from a GitHub repository.
@@ -210,27 +185,13 @@ EXAMPLES:
 				};
 				const lang = langMap[ext] || ext;
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `📄 **${file.path}** (${file.size} bytes)\n\n\`\`\`${lang}\n${file.content}\n\`\`\``,
-						},
-					],
-				};
+				return textContent(`📄 **${file.path}** (${file.size} bytes)\n\n\`\`\`${lang}\n${file.content}\n\`\`\``);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{ type: "text", text: `Error getting file content: ${message}` },
-					],
-					isError: true,
-				};
+				return errorContent(`Error getting file content: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: list_files
 	server.tool(
 		"list_files",
 		`List all files and folders in a repository directory. Use this to explore and understand project structure.
@@ -272,25 +233,13 @@ EXAMPLES:
 						return `${icon} ${f.name}${size}`;
 					});
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Contents of **${repository}/${path || "(root)"}**:\n\n${formatted.join("\n")}`,
-						},
-					],
-				};
+				return textContent(`Contents of **${repository}/${path || "(root)"}**:\n\n${formatted.join("\n")}`);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: `Error listing files: ${message}` }],
-					isError: true,
-				};
+				return errorContent(`Error listing files: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: get_repo_info
 	server.tool(
 		"get_repo_info",
 		`Get metadata about a GitHub repository: description, stars, forks, language, topics, etc.
@@ -326,22 +275,13 @@ This is a lightweight call - use it to quickly check repository details.`,
 					`Updated: ${info.updatedAt}`,
 				].join("\n");
 
-				return {
-					content: [{ type: "text", text }],
-				};
+				return textContent(text);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{ type: "text", text: `Error getting repo info: ${message}` },
-					],
-					isError: true,
-				};
+				return errorContent(`Error getting repo info: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: get_issue
 	server.tool(
 		"get_issue",
 		`Get detailed information about a GitHub issue, including its full timeline of events.
@@ -371,16 +311,6 @@ EXAMPLES:
 			try {
 				const { owner, repo } = parseRepository(repository);
 				const issue = await github.getIssue(owner, repo, issue_number);
-
-				const formatDate = (date: string) => {
-					return new Date(date).toLocaleString("en-US", {
-						year: "numeric",
-						month: "short",
-						day: "numeric",
-						hour: "2-digit",
-						minute: "2-digit",
-					});
-				};
 
 				const header = [
 					`# #${issue.number}: ${issue.title}`,
@@ -451,25 +381,13 @@ EXAMPLES:
 						? `\n---\n\n## Timeline\n\n${timelineItems.join("\n\n")}`
 						: "";
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `${header}${body}${timeline}`,
-						},
-					],
-				};
+				return textContent(`${header}${body}${timeline}`);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: `Error getting issue: ${message}` }],
-					isError: true,
-				};
+				return errorContent(`Error getting issue: ${getErrorMessage(error)}`);
 			}
 		},
 	);
 
-	// Tool: get_pull_request
 	server.tool(
 		"get_pull_request",
 		`Get detailed information about a GitHub pull request, including diff and reviews.
@@ -499,24 +417,7 @@ EXAMPLES:
 				const { owner, repo } = parseRepository(repository);
 				const pr = await github.getPullRequest(owner, repo, pull_number);
 
-				const formatDate = (date: string) => {
-					return new Date(date).toLocaleString("en-US", {
-						year: "numeric",
-						month: "short",
-						day: "numeric",
-						hour: "2-digit",
-						minute: "2-digit",
-					});
-				};
-
-				const stateIcon =
-					pr.state === "open"
-						? pr.draft
-							? "📝 Draft"
-							: "🟢 Open"
-						: pr.mergedAt
-							? "🟣 Merged"
-							: "🔴 Closed";
+				const stateIcon = getPrStateIcon(pr.state, pr.draft, pr.mergedAt);
 
 				const header = [
 					`# #${pr.number}: ${pr.title}`,
@@ -553,15 +454,7 @@ EXAMPLES:
 					pr.reviews.length > 0
 						? `\n---\n\n## Reviews\n\n${pr.reviews
 								.map((review) => {
-									const stateEmoji =
-										{
-											APPROVED: "✅",
-											CHANGES_REQUESTED: "❌",
-											COMMENTED: "💬",
-											DISMISSED: "🚫",
-											PENDING: "⏳",
-										}[review.state] || "📋";
-
+									const stateEmoji = getReviewStateEmoji(review.state);
 									const reviewHeader = `### ${stateEmoji} @${review.user.login} - ${review.state}${review.submittedAt ? ` on ${formatDate(review.submittedAt)}` : ""}`;
 									const reviewBody = review.body ? `\n\n${review.body}` : "";
 									const reviewComments =
@@ -581,22 +474,68 @@ EXAMPLES:
 
 				const diff = `\n---\n\n## Diff\n\n\`\`\`diff\n${pr.diff}\n\`\`\``;
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: `${header}${body}${reviewsSection}${diff}`,
-						},
-					],
-				};
+				return textContent(`${header}${body}${reviewsSection}${diff}`);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{ type: "text", text: `Error getting pull request: ${message}` },
-					],
-					isError: true,
-				};
+				return errorContent(`Error getting pull request: ${getErrorMessage(error)}`);
+			}
+		},
+	);
+
+	server.tool(
+		"get_commit",
+		`Get detailed information about a specific commit, including its diff.
+
+WHEN TO USE:
+- Need to see changes introduced by a specific commit
+- Viewing a commit from a PR (e.g., /pull/123/changes/abc123)
+- Understanding what a particular commit modified
+
+OUTPUT: Returns commit details with:
+- Commit message and author information
+- Statistics (additions, deletions)
+- Full diff showing all file changes
+
+EXAMPLES:
+- repository: "vercel/ai", sha: "abc123" → gets commit diff
+- repository: "assistant-ui/assistant-ui", sha: "29ecc9af" → gets commit from a PR`,
+		{
+			repository: z
+				.string()
+				.describe('Repository in "owner/repo" format (e.g., "vercel/ai")'),
+			sha: z
+				.string()
+				.describe("The commit SHA (full or abbreviated)"),
+		},
+		async ({ repository, sha }) => {
+			try {
+				const { owner, repo } = parseRepository(repository);
+				const commit = await github.getCommit(owner, repo, sha);
+
+				const authorInfo = getCommitAuthorInfo(commit);
+
+				const header = [
+					`# Commit ${commit.sha.slice(0, 7)}`,
+					"",
+					authorInfo,
+					`**Changes:** +${commit.stats.additions} -${commit.stats.deletions} in ${commit.files.length} files`,
+					"",
+					`🔗 ${commit.htmlUrl}`,
+					"",
+					"## Message",
+					"",
+					commit.message,
+				].join("\n");
+
+				const filesChanged =
+					commit.files.length > 0
+						? `\n\n## Files Changed\n\n${commit.files.map((f) => `- ${getFileStatusIcon(f.status)} ${f.filename} (+${f.additions} -${f.deletions})`).join("\n")}`
+						: "";
+
+				const diff = `\n\n## Diff\n\n\`\`\`diff\n${commit.diff}\n\`\`\``;
+
+				return textContent(`${header}${filesChanged}${diff}`);
+			} catch (error) {
+				return errorContent(`Error getting commit: ${getErrorMessage(error)}`);
 			}
 		},
 	);

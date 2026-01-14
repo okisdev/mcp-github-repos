@@ -1,4 +1,5 @@
 import { Octokit } from "@octokit/rest";
+import { parseLabels, parseTimelineEvents, parseUser } from "./utils";
 
 export interface GitHubConfig {
 	token?: string;
@@ -136,6 +137,36 @@ export interface PullRequestReview {
 	comments: PullRequestReviewComment[];
 }
 
+export interface CommitInfo {
+	sha: string;
+	message: string;
+	author: {
+		name: string;
+		email: string;
+		date: string;
+	} | null;
+	committer: {
+		name: string;
+		email: string;
+		date: string;
+	} | null;
+	user: IssueUser | null;
+	htmlUrl: string;
+	stats: {
+		additions: number;
+		deletions: number;
+		total: number;
+	};
+	files: Array<{
+		filename: string;
+		status: string;
+		additions: number;
+		deletions: number;
+		patch?: string;
+	}>;
+	diff: string;
+}
+
 export interface PullRequestInfo {
 	number: number;
 	title: string;
@@ -165,9 +196,6 @@ export interface PullRequestInfo {
 	timeline: IssueTimelineEvent[];
 }
 
-/**
- * Parse repository string in format "owner/repo" or just "repo"
- */
 export function parseRepository(repository: string): {
 	owner: string;
 	repo: string;
@@ -187,9 +215,6 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 	});
 
 	return {
-		/**
-		 * Search for repositories by name or description
-		 */
 		async searchRepos(query: string): Promise<SearchReposResult> {
 			const response = await octokit.search.repos({
 				q: query,
@@ -356,104 +381,7 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 			]);
 
 			const issue = issueResponse.data;
-			const timelineEvents = timelineResponse.data;
-
-			const parseUser = (
-				user: { login: string; html_url: string } | null,
-			): IssueUser => ({
-				login: user?.login ?? "unknown",
-				htmlUrl: user?.html_url ?? "",
-			});
-
-			const parseLabel = (label: {
-				name?: string;
-				color?: string | null;
-				description?: string | null;
-			}): IssueLabel => ({
-				name: label.name ?? "",
-				color: label.color ?? "",
-				description: label.description ?? null,
-			});
-
-			const timeline: IssueTimelineEvent[] = timelineEvents.map((event) => {
-				const base: IssueTimelineEvent = {
-					type: event.event ?? "unknown",
-					createdAt: (event as { created_at?: string }).created_at ?? "",
-					actor: (event as { actor?: { login: string; html_url: string } })
-						.actor
-						? parseUser(
-								(event as { actor: { login: string; html_url: string } }).actor,
-							)
-						: undefined,
-				};
-
-				if (event.event === "commented" && "body" in event) {
-					base.body = (event as { body?: string }).body ?? "";
-				}
-
-				if (event.event === "labeled" || event.event === "unlabeled") {
-					const labelEvent = event as {
-						label?: {
-							name?: string;
-							color?: string;
-							description?: string | null;
-						};
-					};
-					if (labelEvent.label) {
-						base.label = parseLabel(labelEvent.label);
-					}
-				}
-
-				if (event.event === "assigned" || event.event === "unassigned") {
-					const assignEvent = event as {
-						assignee?: { login: string; html_url: string };
-					};
-					if (assignEvent.assignee) {
-						base.assignee = parseUser(assignEvent.assignee);
-					}
-				}
-
-				if (event.event === "milestoned" || event.event === "demilestoned") {
-					const milestoneEvent = event as { milestone?: { title: string } };
-					if (milestoneEvent.milestone) {
-						base.milestone = { title: milestoneEvent.milestone.title };
-					}
-				}
-
-				if (event.event === "renamed") {
-					const renameEvent = event as {
-						rename?: { from: string; to: string };
-					};
-					if (renameEvent.rename) {
-						base.rename = renameEvent.rename;
-					}
-				}
-
-				if (event.event === "cross-referenced") {
-					const crossRefEvent = event as {
-						source?: { issue?: { number: number; title: string } };
-					};
-					if (crossRefEvent.source?.issue) {
-						base.source = {
-							issue: {
-								number: crossRefEvent.source.issue.number,
-								title: crossRefEvent.source.issue.title,
-							},
-						};
-					}
-				}
-
-				if (event.event === "referenced" || event.event === "committed") {
-					const commitEvent = event as {
-						commit_id?: string;
-						commit_url?: string;
-					};
-					base.commitId = commitEvent.commit_id;
-					base.commitUrl = commitEvent.commit_url;
-				}
-
-				return base;
-			});
+			const timeline = parseTimelineEvents(timelineResponse.data);
 
 			return {
 				number: issue.number,
@@ -461,11 +389,7 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 				state: issue.state,
 				body: issue.body ?? null,
 				user: parseUser(issue.user),
-				labels: issue.labels.map((label) =>
-					typeof label === "string"
-						? { name: label, color: "", description: null }
-						: parseLabel(label),
-				),
+				labels: parseLabels(issue.labels),
 				assignees: (issue.assignees ?? []).map(parseUser),
 				milestone: issue.milestone
 					? { title: issue.milestone.title, state: issue.milestone.state }
@@ -513,28 +437,10 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 
 			const pr = prResponse.data;
 			const diff = diffResponse.data as unknown as string;
-			const reviewsData = reviewsResponse.data;
-			const timelineEvents = timelineResponse.data;
-
-			const parseUser = (
-				user: { login: string; html_url: string } | null,
-			): IssueUser => ({
-				login: user?.login ?? "unknown",
-				htmlUrl: user?.html_url ?? "",
-			});
-
-			const parseLabel = (label: {
-				name?: string;
-				color?: string | null;
-				description?: string | null;
-			}): IssueLabel => ({
-				name: label.name ?? "",
-				color: label.color ?? "",
-				description: label.description ?? null,
-			});
+			const timeline = parseTimelineEvents(timelineResponse.data);
 
 			const reviews: PullRequestReview[] = await Promise.all(
-				reviewsData.map(async (review) => {
+				reviewsResponse.data.map(async (review) => {
 					const commentsResponse = await octokit.pulls.listCommentsForReview({
 						owner,
 						repo,
@@ -562,53 +468,13 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 				}),
 			);
 
-			const timeline: IssueTimelineEvent[] = timelineEvents.map((event) => {
-				const base: IssueTimelineEvent = {
-					type: event.event ?? "unknown",
-					createdAt: (event as { created_at?: string }).created_at ?? "",
-					actor: (event as { actor?: { login: string; html_url: string } })
-						.actor
-						? parseUser(
-								(event as { actor: { login: string; html_url: string } }).actor,
-							)
-						: undefined,
-				};
-
-				if (event.event === "commented" && "body" in event) {
-					base.body = (event as { body?: string }).body ?? "";
-				}
-
-				if (event.event === "labeled" || event.event === "unlabeled") {
-					const labelEvent = event as {
-						label?: {
-							name?: string;
-							color?: string;
-							description?: string | null;
-						};
-					};
-					if (labelEvent.label) {
-						base.label = parseLabel(labelEvent.label);
-					}
-				}
-
-				if (event.event === "reviewed") {
-					base.body = (event as { body?: string }).body ?? "";
-				}
-
-				return base;
-			});
-
 			return {
 				number: pr.number,
 				title: pr.title,
 				state: pr.state,
 				body: pr.body,
 				user: parseUser(pr.user),
-				labels: pr.labels.map((label) =>
-					typeof label === "string"
-						? { name: label, color: "", description: null }
-						: parseLabel(label),
-				),
+				labels: parseLabels(pr.labels),
 				assignees: (pr.assignees ?? []).map(parseUser),
 				milestone: pr.milestone
 					? { title: pr.milestone.title, state: pr.milestone.state }
@@ -631,6 +497,61 @@ export function createGitHubClient(config: GitHubConfig = {}) {
 				diff,
 				reviews,
 				timeline,
+			};
+		},
+
+		async getCommit(owner: string, repo: string, sha: string): Promise<CommitInfo> {
+			const [commitResponse, diffResponse] = await Promise.all([
+				octokit.repos.getCommit({
+					owner,
+					repo,
+					ref: sha,
+				}),
+				octokit.repos.getCommit({
+					owner,
+					repo,
+					ref: sha,
+					mediaType: { format: "diff" },
+				}),
+			]);
+
+			const commit = commitResponse.data;
+			const diff = diffResponse.data as unknown as string;
+
+			return {
+				sha: commit.sha,
+				message: commit.commit.message,
+				author: commit.commit.author
+					? {
+							name: commit.commit.author.name ?? "",
+							email: commit.commit.author.email ?? "",
+							date: commit.commit.author.date ?? "",
+						}
+					: null,
+				committer: commit.commit.committer
+					? {
+							name: commit.commit.committer.name ?? "",
+							email: commit.commit.committer.email ?? "",
+							date: commit.commit.committer.date ?? "",
+						}
+					: null,
+				user: commit.author
+					? { login: commit.author.login, htmlUrl: commit.author.html_url }
+					: null,
+				htmlUrl: commit.html_url,
+				stats: {
+					additions: commit.stats?.additions ?? 0,
+					deletions: commit.stats?.deletions ?? 0,
+					total: commit.stats?.total ?? 0,
+				},
+				files: (commit.files ?? []).map((file) => ({
+					filename: file.filename,
+					status: file.status,
+					additions: file.additions,
+					deletions: file.deletions,
+					patch: file.patch,
+				})),
+				diff,
 			};
 		},
 	};

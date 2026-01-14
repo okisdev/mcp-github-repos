@@ -10,10 +10,8 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Enable CORS for MCP clients
 app.use("*", cors());
 
-// Health check endpoint
 app.get("/", (c) => {
 	return c.json({
 		name: packageJson.name,
@@ -31,11 +29,11 @@ app.get("/", (c) => {
 			"get_repo_info - Get repository information",
 			"get_issue - Get issue details with timeline (comments, labels, events)",
 			"get_pull_request - Get PR details with diff and reviews",
+			"get_commit - Get commit details with diff",
 		],
 	});
 });
 
-// MCP endpoint using @hono/mcp StreamableHTTPTransport
 app.all("/mcp", async (c) => {
 	const githubToken = c.req.header("X-GitHub-Token") || c.env.GITHUB_TOKEN;
 	const server = createMcpServer({ githubToken });
